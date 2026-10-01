@@ -34,7 +34,7 @@ Money never appears or disappears: every transfer is a journal entry made of pos
 | Concept | What it is | Key rules |
 | --- | --- | --- |
 | Account | A bucket that holds a balance | Has a type (customer, system); customer accounts cannot go below zero |
-| Transfer | A request to move an amount from one account to another | Has an idempotency key; status PENDING, COMMITTED or REJECTED |
+| Transfer | A request to move an amount from one account to another | Has an idempotency key; status COMMITTED or REJECTED |
 | Journal entry | The accounting record of one committed transfer | Immutable; created in the same DB transaction as its postings |
 | Posting | One line of a journal entry: an account and a signed amount | Postings in an entry sum to zero; never updated or deleted |
 
@@ -95,7 +95,6 @@ CREATE TABLE accounts (
     type          TEXT NOT NULL CHECK (type IN ('CUSTOMER', 'SYSTEM')),
     currency      CHAR(3) NOT NULL DEFAULT 'CAD',
     balance_minor BIGINT NOT NULL DEFAULT 0,
-    version       BIGINT NOT NULL DEFAULT 0,          -- optimistic locking
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT non_negative_customer
         CHECK (type <> 'CUSTOMER' OR balance_minor >= 0)
@@ -108,9 +107,10 @@ CREATE TABLE transfers (
     from_account_id UUID NOT NULL REFERENCES accounts(id),
     to_account_id   UUID NOT NULL REFERENCES accounts(id),
     amount_minor    BIGINT NOT NULL CHECK (amount_minor > 0),
-    status          TEXT NOT NULL CHECK (status IN ('PENDING','COMMITTED','REJECTED')),
+    status          TEXT NOT NULL CHECK (status IN ('COMMITTED','REJECTED')),
     reject_reason   TEXT,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+    created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT no_self_transfer CHECK (from_account_id <> to_account_id)
 );
 
 CREATE TABLE journal_entries (
@@ -137,6 +137,21 @@ CREATE TABLE outbox_events (
     published_at   TIMESTAMPTZ
 );
 CREATE INDEX idx_outbox_unpublished ON outbox_events (created_at) WHERE published_at IS NULL;
+
+-- Journal entries and postings are append-only: any UPDATE or DELETE is an error.
+CREATE FUNCTION forbid_mutation() RETURNS trigger AS $$
+BEGIN
+    RAISE EXCEPTION '% on % is not allowed: table is append-only', TG_OP, TG_TABLE_NAME;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER journal_entries_append_only
+    BEFORE UPDATE OR DELETE ON journal_entries
+    FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
+
+CREATE TRIGGER postings_append_only
+    BEFORE UPDATE OR DELETE ON postings
+    FOR EACH ROW EXECUTE FUNCTION forbid_mutation();
 ```
 
 Design notes:
@@ -145,6 +160,10 @@ Design notes:
 - The `UNIQUE` constraint on `idempotency_key` is the last line of defence against double execution, even if application logic has a bug.
 - `journal_entries.transfer_id` is `UNIQUE`, so one transfer can only ever be booked once.
 - The index on postings supports the cursor-paginated history endpoint.
+- `journal_entries` and `postings` are append-only: triggers reject any `UPDATE` or `DELETE`.
+- Zero-sum per journal entry is enforced in the service code (and proven by tests), not by the database.
+- `transfers.status` has no PENDING state: the transfer row and its journal entry are written in one transaction, so a transfer is only ever visible as COMMITTED or REJECTED.
+- Currency is stored per account; a transfer between accounts with different currencies is rejected by the service (422).
 
 ## Consistency, concurrency and idempotency
 

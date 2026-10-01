@@ -39,7 +39,7 @@ flowchart LR
     Kafka --> Risk[Risk-review service]
 ```
 
-A transfer runs in one database transaction: it locks both accounts with `SELECT ... FOR UPDATE` in ascending id order (so opposing transfers cannot deadlock), checks funds, inserts the journal entry and two postings, updates the cached balances, and writes the outbox row. All of it commits together or not at all. The full flow, data model and reasoning are in the [design doc](docs/Ledger%20Service%20%E2%80%94%20Design%20Doc%20%26%20Phase%20Plan.md).
+A transfer runs in one database transaction: it locks both accounts with `SELECT ... FOR UPDATE` in ascending id order (so opposing transfers cannot deadlock), checks funds, inserts the journal entry and two postings, updates the cached balances, and writes the outbox row. All of it commits together or not at all. The full flow, data model and reasoning are in the [design doc](docs/design.md).
 
 ## Tech stack
 
@@ -104,5 +104,5 @@ Load-test numbers will be added here once the transfer path exists. There are no
 
 ## Documentation
 
-- [Design doc and phase plan](docs/Ledger%20Service%20%E2%80%94%20Design%20Doc%20%26%20Phase%20Plan.md)
+- [Design doc and phase plan](docs/design.md)
 - Architecture decision records: `docs/adr/` (to be written as decisions are made)
