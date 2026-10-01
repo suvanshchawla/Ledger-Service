@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: ledger-service
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ledger
+    username: ledger
+    password: ledger
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  mvc:
+    problemdetails:
+      enabled: true # RFC 9457 Problem Details for Spring MVC exceptions
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
