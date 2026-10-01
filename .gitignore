@@ -4,3 +4,7 @@ build/
 *.iml
 .vscode/
 out/
+bin/
+.classpath
+.project
+.settings/
