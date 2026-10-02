@@ -3,8 +3,12 @@ package dev.suvansh.ledger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.suvansh.ledger.account.SystemAccounts;
 import java.util.UUID;
+import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
@@ -69,6 +73,44 @@ class SchemaConstraintsTest {
                 .hasMessageContaining("append-only");
     }
 
+    @Test
+    void accountNameIsRequired() {
+        assertThatThrownBy(() -> jdbc.sql("INSERT INTO accounts (id, type) VALUES (?, 'CUSTOMER')")
+                        .param(UUID.randomUUID()).update())
+                .hasMessageContaining("name");
+    }
+
+    @ParameterizedTest
+    @MethodSource("invalidNames")
+    void invalidAccountNamesAreRejected(String name) {
+        assertThatThrownBy(() -> jdbc.sql("INSERT INTO accounts (id, type, name) VALUES (?, 'CUSTOMER', ?)")
+                        .param(UUID.randomUUID()).param(name).update())
+                .hasMessageContaining("accounts_name_");
+    }
+
+    static Stream<String> invalidNames() {
+        return Stream.of("", " ", " padded ", "\t", "tab\t", "\nleading", "x".repeat(101));
+    }
+
+    @Test
+    void accountNameMayBeShared() {
+        for (int i = 0; i < 2; i++) {
+            jdbc.sql("INSERT INTO accounts (id, type, name) VALUES (?, 'CUSTOMER', 'Alex')")
+                    .param(UUID.randomUUID()).update();
+        }
+    }
+
+    @Test
+    void treasuryAccountIsSeeded() {
+        var treasury = jdbc.sql("SELECT type, currency, name, balance_minor FROM accounts WHERE id = ?")
+                .param(SystemAccounts.TREASURY_ID)
+                .query((rs, n) -> rs.getString("type") + "|" + rs.getString("currency") + "|"
+                        + rs.getString("name") + "|" + rs.getLong("balance_minor"))
+                .single();
+
+        assertThat(treasury).isEqualTo("SYSTEM|CAD|Treasury|0");
+    }
+
     private record Inserted(UUID entryId, long postingId) {}
 
     private Inserted insertPosting() {
@@ -88,7 +130,8 @@ class SchemaConstraintsTest {
 
     private UUID insertAccount(String type) {
         UUID id = UUID.randomUUID();
-        jdbc.sql("INSERT INTO accounts (id, type) VALUES (?, ?)").param(id).param(type).update();
+        jdbc.sql("INSERT INTO accounts (id, type, name) VALUES (?, ?, 'Test account')")
+                .param(id).param(type).update();
         return id;
     }
 
