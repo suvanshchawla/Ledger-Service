@@ -1,7 +1,10 @@
 package dev.suvansh.ledger.account;
 
 import dev.suvansh.ledger.common.Money;
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.OffsetDateTime;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -26,13 +29,27 @@ class AccountRepository {
                 .param("type", type.name())
                 .param("name", name)
                 .param("currency", currency)
-                .query((rs, rowNum) -> new Account(
-                        rs.getObject("id", UUID.class),
-                        AccountType.valueOf(rs.getString("type")),
-                        rs.getString("name"),
-                        rs.getString("currency"),
-                        Money.ofMinorUnits(rs.getLong("balance_minor")),
-                        rs.getObject("created_at", OffsetDateTime.class).toInstant()))
+                .query(AccountRepository::toAccount)
                 .single();
+    }
+
+    Optional<Account> findById(UUID id) {
+        return jdbc.sql("""
+                        SELECT id, type, name, currency, balance_minor, created_at
+                        FROM accounts WHERE id = :id
+                        """)
+                .param("id", id)
+                .query(AccountRepository::toAccount)
+                .optional();
+    }
+
+    private static Account toAccount(ResultSet rs, int rowNum) throws SQLException {
+        return new Account(
+                rs.getObject("id", UUID.class),
+                AccountType.valueOf(rs.getString("type")),
+                rs.getString("name"),
+                rs.getString("currency"),
+                Money.ofMinorUnits(rs.getLong("balance_minor")),
+                rs.getObject("created_at", OffsetDateTime.class).toInstant());
     }
 }

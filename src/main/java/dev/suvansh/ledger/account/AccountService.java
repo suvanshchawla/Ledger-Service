@@ -20,4 +20,8 @@ public class AccountService {
     public Account openCustomerAccount(String name, String currency) {
         return accounts.insert(UUID.randomUUID(), AccountType.CUSTOMER, name.strip(), currency);
     }
+
+    public Account getAccount(UUID id) {
+        return accounts.findById(id).orElseThrow(() -> new AccountNotFoundException(id));
+    }
 }
