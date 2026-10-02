@@ -1,5 +1,7 @@
 # Ledger Service
 
+[![CI](https://github.com/suvanshchawla/Ledger-Service/actions/workflows/ci.yml/badge.svg)](https://github.com/suvanshchawla/Ledger-Service/actions/workflows/ci.yml)
+
 A double-entry ledger for a small fintech platform. It is the system of record for accounts and money movement: every transfer is booked as an immutable journal entry whose postings sum to zero, writes are idempotent, and every committed transfer is published as an event through a transactional outbox.
 
 This is a portfolio project. Correctness, tests that prove the guarantees, and readability matter more than feature count.
@@ -88,7 +90,8 @@ docker-compose.yml                                local PostgreSQL
 | Transfers: locking, idempotency, concurrency tests | Planned |
 | Problem Details error handling (RFC 9457) | Done |
 | Outbox poller and Kafka publishing | Planned (Phase 2) |
-| CI, ADRs, k6 load-test results | Planned |
+| CI: `./gradlew test` on every push (GitHub Actions) | Done |
+| ADRs, k6 load-test results | Planned |
 
 Load-test numbers will be added here once the transfer path exists. There are none yet.
 
