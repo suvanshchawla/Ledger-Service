@@ -6,7 +6,7 @@ A double-entry ledger for a small fintech platform. It is the system of record f
 
 This is a portfolio project. Correctness, tests that prove the guarantees, and readability matter more than feature count.
 
-> **Status: early development (Phase 1).** The project skeleton, the `Money` type, the database schema, error handling, the account endpoints and the transfer logic (locking, idempotency, validation) exist. The transfer REST endpoints, transaction history and outbox publishing are planned and not built yet. See [Status](#status).
+> **Status: early development (Phase 1).** The project skeleton, the `Money` type, the database schema, error handling, the account endpoints and the transfer logic (locking, idempotency, validation, outbox event) exist. The transfer REST endpoints, transaction history and publishing events to Kafka are planned and not built yet. See [Status](#status).
 
 ## What it will do
 
@@ -89,7 +89,7 @@ docker-compose.yml                                local PostgreSQL
 | Account postings history (cursor-paginated) | Planned |
 | Transfer service: row locking, idempotency, validation, with concurrency and idempotency tests | Done (service layer) |
 | Transfer endpoints (`POST /api/v1/transfers`, `GET /api/v1/transfers/{id}`) | Planned |
-| Outbox event written in the transfer transaction | Planned |
+| Outbox event written in the transfer transaction (`TransferCommitted`) | Done |
 | Problem Details error handling (RFC 9457) | Done |
 | Outbox poller and Kafka publishing | Planned (Phase 2) |
 | CI: `./gradlew test` on every push (GitHub Actions) | Done |
