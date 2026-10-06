@@ -13,6 +13,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import dev.suvansh.ledger.account.AccountNotFoundException;
 import dev.suvansh.ledger.account.AccountType;
 import dev.suvansh.ledger.common.Money;
 import dev.suvansh.ledger.common.ProblemException;
@@ -41,11 +42,13 @@ public class TransferService {
         this.tx = tx;
     }
 
-    private record LockedAccount(UUID id, AccountType type, long balanceMinor) {}
+    private record LockedAccount(UUID id, AccountType type, long balanceMinor, String currency) {}
 
     private record StoredTransfer(UUID id, TransferStatus status, String requestHash) {}
 
     public Transfer transfer(String idempotencyKey, UUID fromAccountId, UUID toAccountId, Money amount) {
+        validate(fromAccountId, toAccountId, amount);
+
         String hash = requestHash(fromAccountId, toAccountId, amount);
 
         Transfer existing = findByKey(idempotencyKey, hash);
@@ -64,6 +67,20 @@ public class TransferService {
                 throw e; // some other unique constraint fired; not ours to hide
             }
             return winner;
+        }
+    }
+
+    /** Checks that need no database, so they run before any lookup, transaction or lock. */
+    private static void validate(UUID from, UUID to, Money amount) {
+        if (from.equals(to)) {
+            throw new ProblemException(HttpStatus.BAD_REQUEST, "same-account",
+                    "Source and destination accounts are the same",
+                    "The source and destination accounts must be different.");
+        }
+        if (amount.minorUnits() <= 0) {
+            throw new ProblemException(HttpStatus.BAD_REQUEST, "invalid-amount",
+                    "Invalid transfer amount",
+                    "The transfer amount must be greater than zero.");
         }
     }
 
@@ -88,7 +105,7 @@ public class TransferService {
         // Lock both accounts in one statement, always in ascending id order, so opposing
         // transfers cannot deadlock. The result is therefore sorted by id, not source-first.
         List<LockedAccount> locked = jdbc.sql("""
-                        SELECT id, type, balance_minor FROM accounts
+                        SELECT id, type, balance_minor, currency FROM accounts
                         WHERE id IN (:from, :to) ORDER BY id FOR UPDATE
                         """)
                 .param("from", from)
@@ -96,13 +113,18 @@ public class TransferService {
                 .query((rs, rowNum) -> new LockedAccount(
                         rs.getObject("id", UUID.class),
                         AccountType.valueOf(rs.getString("type")),
-                        rs.getLong("balance_minor")))
+                        rs.getLong("balance_minor"),
+                        rs.getString("currency")))
                 .list();
 
-        LockedAccount source = locked.stream()
-                .filter(a -> a.id().equals(from))
-                .findFirst()
-                .orElseThrow();
+        LockedAccount source = find(locked, from);
+        LockedAccount destination = find(locked, to);
+
+        if (!source.currency().equals(destination.currency())) {
+            throw new ProblemException(HttpStatus.UNPROCESSABLE_ENTITY, "currency-mismatch",
+                    "Currency mismatch",
+                    "The source and destination accounts must have the same currency.");
+        }
 
         // SYSTEM accounts may go negative, so they are never rejected for funds.
         boolean enough = source.type() == AccountType.SYSTEM || source.balanceMinor() >= amount.minorUnits();
@@ -142,6 +164,14 @@ public class TransferService {
         }
 
         return new Transfer(transferId, status);
+    }
+
+    /** The locked row for this id; a missing row means the account does not exist. */
+    private static LockedAccount find(List<LockedAccount> locked, UUID id) {
+        return locked.stream()
+                .filter(a -> a.id().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new AccountNotFoundException(id));
     }
 
     private void insertPosting(UUID entryId, UUID accountId, Money amount) {
