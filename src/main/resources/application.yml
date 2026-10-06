@@ -11,6 +11,11 @@ spring:
   mvc:
     problemdetails:
       enabled: true # RFC 9457 Problem Details for Spring MVC exceptions
+  jackson:
+    deserialization:
+      # Money is whole minor units. By default Jackson accepts 12.5 for a long and silently
+      # truncates it to 12; reject it instead. (Feature names are bound by exact enum name.)
+      ACCEPT_FLOAT_AS_INT: false
 
 management:
   endpoints:

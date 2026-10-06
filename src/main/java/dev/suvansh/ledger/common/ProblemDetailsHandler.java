@@ -1,6 +1,5 @@
 package dev.suvansh.ledger.common;
 
-import java.net.URI;
 import java.util.List;
 
 import org.slf4j.Logger;
@@ -32,7 +31,6 @@ public class ProblemDetailsHandler extends ResponseEntityExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(ProblemDetailsHandler.class);
 
     static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
-    private static final String TYPE_PREFIX = "urn:ledger:problem:";
 
     @ExceptionHandler(ProblemException.class)
     ResponseEntity<Object> handleProblem(ProblemException ex, WebRequest request) {
@@ -77,10 +75,7 @@ public class ProblemDetailsHandler extends ResponseEntityExceptionHandler {
     }
 
     private static ProblemDetail problem(HttpStatus status, String slug, String title, String detail) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(status, detail);
-        problem.setType(URI.create(TYPE_PREFIX + slug));
-        problem.setTitle(title);
-        return problem;
+        return Problems.of(status, slug, title, detail);
     }
 
     public record FieldViolation(String field, String message) {}
