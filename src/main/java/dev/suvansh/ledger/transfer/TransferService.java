@@ -3,6 +3,7 @@ package dev.suvansh.ledger.transfer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
@@ -13,9 +14,13 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import dev.suvansh.ledger.account.AccountNotFoundException;
 import dev.suvansh.ledger.account.AccountType;
 import dev.suvansh.ledger.common.Money;
+import dev.suvansh.ledger.common.MoneyDto;
 import dev.suvansh.ledger.common.ProblemException;
 
 /**
@@ -33,18 +38,25 @@ import dev.suvansh.ledger.common.ProblemException;
 public class TransferService {
 
     private static final String INSUFFICIENT_FUNDS = "Insufficient funds";
+    private static final String TRANSFER_COMMITTED = "TransferCommitted";
 
     private final JdbcClient jdbc;
     private final TransactionTemplate tx;
+    private final ObjectMapper json;
 
-    TransferService(JdbcClient jdbc, TransactionTemplate tx) {
+    TransferService(JdbcClient jdbc, TransactionTemplate tx, ObjectMapper json) {
         this.jdbc = jdbc;
         this.tx = tx;
+        this.json = json;
     }
 
     private record LockedAccount(UUID id, AccountType type, long balanceMinor, String currency) {}
 
     private record StoredTransfer(UUID id, TransferStatus status, String requestHash) {}
+
+    /** The outbox event payload. Field names are the published JSON field names; do not rename them casually. */
+    private record TransferCommitted(UUID eventId, String eventType, int schemaVersion, Instant occurredAt,
+                                     UUID transferId, UUID fromAccountId, UUID toAccountId, MoneyDto amount) {}
 
     public Transfer transfer(String idempotencyKey, UUID fromAccountId, UUID toAccountId, Money amount) {
         validate(fromAccountId, toAccountId, amount);
@@ -161,6 +173,9 @@ public class TransferService {
 
             adjustBalance(from, amount.negate());
             adjustBalance(to, amount);
+
+            // Same transaction as the transfer, so the event exists if and only if the transfer committed.
+            insertOutboxEvent(transferId, from, to, amount, source.currency());
         }
 
         return new Transfer(transferId, status);
@@ -221,4 +236,26 @@ public class TransferService {
         return new Transfer(stored.id(), stored.status());
     }
 
+    private void insertOutboxEvent(UUID transferId, UUID from, UUID to, Money amount, String currency) {
+        UUID eventId = UUID.randomUUID();
+        TransferCommitted event = new TransferCommitted(eventId, TRANSFER_COMMITTED, 1, Instant.now(),
+                transferId, from, to, MoneyDto.of(amount, currency));
+
+        String payload;
+        try {
+            payload = json.writeValueAsString(event);
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException(e); // a plain record always serializes
+        }
+
+        jdbc.sql("""
+                        INSERT INTO outbox_events (id, aggregate_id, event_type, payload)
+                        VALUES (:id, :aggregateId, :eventType, CAST(:payload AS jsonb))
+                        """)
+                .param("id", eventId)
+                .param("aggregateId", transferId)
+                .param("eventType", TRANSFER_COMMITTED)
+                .param("payload", payload)
+                .update();
+    }
 }
