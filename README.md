@@ -6,7 +6,7 @@ A double-entry ledger for a small fintech platform. It is the system of record f
 
 This is a portfolio project. Correctness, tests that prove the guarantees, and readability matter more than feature count.
 
-> **Status: early development (Phase 1).** The project skeleton, the `Money` type, the database schema, error handling, the account endpoints and the transfer logic (locking, idempotency, validation, outbox event) exist. The transfer REST endpoints, transaction history and publishing events to Kafka are planned and not built yet. See [Status](#status).
+> **Status: early development (Phase 1).** The project skeleton, the `Money` type, the database schema, error handling, the account and transfer endpoints, and the transfer logic (locking, idempotency, validation, outbox event) exist. Transaction history and publishing events to Kafka are planned and not built yet. See [Status](#status).
 
 ## What it will do
 
@@ -67,6 +67,31 @@ Run the tests (they start their own throwaway Postgres with Testcontainers, so D
 
 If you change a migration that has already been applied to your local database, Flyway will refuse to start. Reset the local database with `docker compose down -v`.
 
+## Try it
+
+With the app running (`./gradlew bootRun`), open two accounts, fund one from the seeded Treasury account, and move money. Each response carries the new account or transfer `id`; paste it into the next command.
+
+```bash
+# Open accounts (a customer account starts at a zero balance)
+curl -s -X POST localhost:8080/api/v1/accounts -H 'Content-Type: application/json' -d '{"name":"Alex"}'
+curl -s -X POST localhost:8080/api/v1/accounts -H 'Content-Type: application/json' -d '{"name":"Sam"}'
+
+# Fund Alex with 100.00 CAD (10000 cents) from the Treasury system account
+curl -si -X POST localhost:8080/api/v1/transfers \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: deposit-1' \
+  -d '{"fromAccountId":"00000000-0000-0000-0000-000000000001","toAccountId":"<alex-id>","amount":{"value":10000,"currency":"CAD"}}'
+
+# Alex pays Sam 25.00 CAD. Re-running this exact command replays the same response and moves no money
+curl -si -X POST localhost:8080/api/v1/transfers \
+  -H 'Content-Type: application/json' -H 'Idempotency-Key: pay-1' \
+  -d '{"fromAccountId":"<alex-id>","toAccountId":"<sam-id>","amount":{"value":2500,"currency":"CAD"}}'
+
+curl -s localhost:8080/api/v1/transfers/<transfer-id>
+curl -s localhost:8080/api/v1/accounts/<alex-id>
+```
+
+Amounts are whole minor units (cents). Use a new `Idempotency-Key` for each new payment, and reuse a key only to retry the same payment. Try breaking it: send more than the balance (a `422` problem naming the stored, rejected transfer), reuse a key with a different amount (`409`), omit the header (`428`), or send `"value": 12.5` (`400`).
+
 ## Project structure
 
 ```
@@ -88,12 +113,13 @@ docker-compose.yml                                local PostgreSQL
 | Accounts endpoints: open an account (`POST /api/v1/accounts`), fetch one (`GET /api/v1/accounts/{id}`) | Done |
 | Account postings history (cursor-paginated) | Planned |
 | Transfer service: row locking, idempotency, validation, with concurrency and idempotency tests | Done (service layer) |
-| Transfer endpoints (`POST /api/v1/transfers`, `GET /api/v1/transfers/{id}`) | Planned |
+| Transfer endpoints (`POST /api/v1/transfers`, `GET /api/v1/transfers/{id}`) | Done |
 | Outbox event written in the transfer transaction (`TransferCommitted`) | Done |
 | Problem Details error handling (RFC 9457) | Done |
 | Outbox poller and Kafka publishing | Planned (Phase 2) |
 | CI: `./gradlew test` on every push (GitHub Actions) | Done |
-| ADRs, k6 load-test results | Planned |
+| ADR 0005 (outbox) | Done |
+| ADRs 0001-0004, k6 load-test results | Planned |
 
 Load-test numbers will be added here once the transfer endpoint exists. There are none yet.
 
@@ -106,9 +132,12 @@ Load-test numbers will be added here once the transfer endpoint exists. There ar
 - **No first-class reversals or refunds.** A reversal is a new, compensating transfer.
 - **At-least-once event delivery.** Consumers must deduplicate by event id.
 - **Single database, single region.** Throughput numbers will be for one instance against one Postgres.
+- **No transfer reference or memo field yet.** Unknown request fields are ignored.
+- **Idempotency keys are global,** not scoped per client, until there is authentication.
 - **No UI.** The REST API is the interface.
 
 ## Documentation
 
 - [Design doc and phase plan](docs/design.md)
-- Architecture decision records: `docs/adr/` (to be written as decisions are made)
+- Architecture decision records, written as decisions are made:
+  - [0005: Transactional outbox with polling](docs/adr/0005-transactional-outbox.md)
