@@ -22,7 +22,7 @@ final class LedgerFixture {
 
     LedgerFixture(JdbcClient jdbc) {
         this.jdbc = jdbc;
-        this.fundingAccount = insertAccount("SYSTEM", "Test funding");
+        this.fundingAccount = insertAccount("SYSTEM", "Test funding", "CAD");
         accounts.add(fundingAccount);
     }
 
@@ -32,7 +32,12 @@ final class LedgerFixture {
 
     /** Opens a CUSTOMER account and gives it {@code initialBalance} via a proper, balanced journal entry. */
     UUID openCustomer(String name, long initialBalance) {
-        UUID id = insertAccount("CUSTOMER", name);
+        return openCustomer(name, initialBalance, "CAD");
+    }
+
+    /** Like {@link #openCustomer(String, long)} but in another currency; funded from the same (CAD) funding account. */
+    UUID openCustomer(String name, long initialBalance, String currency) {
+        UUID id = insertAccount("CUSTOMER", name, currency);
         accounts.add(id);
         if (initialBalance > 0) {
             recordEntry(fundingAccount, id, initialBalance, initialBalance);
@@ -132,9 +137,10 @@ final class LedgerFixture {
                 .isZero();
     }
 
-    private UUID insertAccount(String type, String name) {
+    private UUID insertAccount(String type, String name, String currency) {
         UUID id = UUID.randomUUID();
-        jdbc.sql("INSERT INTO accounts (id, type, name) VALUES (?, ?, ?)").param(id).param(type).param(name).update();
+        jdbc.sql("INSERT INTO accounts (id, type, name, currency) VALUES (?, ?, ?, ?)")
+                .param(id).param(type).param(name).param(currency).update();
         return id;
     }
 
