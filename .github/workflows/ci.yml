@@ -8,9 +8,11 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch makes the older run pointless.
+# A newer push to the same feature branch makes the older run pointless, so cancel it.
+# On main the group is the commit SHA, so no push can cancel (or replace) another commit's
+# run and each merge keeps a complete result.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: true
 
 jobs:
