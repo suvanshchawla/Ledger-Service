@@ -1,4 +1,4 @@
-package dev.suvansh.ledger.transfer;
+package dev.suvansh.ledger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -14,29 +14,29 @@ import org.springframework.jdbc.core.simple.JdbcClient;
  * <p>Each fixture owns a private SYSTEM funding account, so tests never touch the shared Treasury
  * and cannot interfere with each other. Not thread-safe: use it from the test thread only.
  */
-final class LedgerFixture {
+public final class LedgerFixture {
 
     private final JdbcClient jdbc;
     private final UUID fundingAccount;
     private final List<UUID> accounts = new ArrayList<>();
 
-    LedgerFixture(JdbcClient jdbc) {
+    public LedgerFixture(JdbcClient jdbc) {
         this.jdbc = jdbc;
         this.fundingAccount = insertAccount("SYSTEM", "Test funding", "CAD");
         accounts.add(fundingAccount);
     }
 
-    UUID fundingAccount() {
+    public UUID fundingAccount() {
         return fundingAccount;
     }
 
     /** Opens a CUSTOMER account and gives it {@code initialBalance} via a proper, balanced journal entry. */
-    UUID openCustomer(String name, long initialBalance) {
+    public UUID openCustomer(String name, long initialBalance) {
         return openCustomer(name, initialBalance, "CAD");
     }
 
     /** Like {@link #openCustomer(String, long)} but in another currency; funded from the same (CAD) funding account. */
-    UUID openCustomer(String name, long initialBalance, String currency) {
+    public UUID openCustomer(String name, long initialBalance, String currency) {
         UUID id = insertAccount("CUSTOMER", name, currency);
         accounts.add(id);
         if (initialBalance > 0) {
@@ -50,7 +50,7 @@ final class LedgerFixture {
      * the cached balances updated to match. Normally debit equals credit; tests pass different
      * values to build a deliberately broken entry.
      */
-    void recordEntry(UUID from, UUID to, long debit, long credit) {
+    public UUID recordEntry(UUID from, UUID to, long debit, long credit) {
         UUID transferId = UUID.randomUUID();
         UUID entryId = UUID.randomUUID();
         jdbc.sql("""
@@ -66,23 +66,24 @@ final class LedgerFixture {
         insertPosting(entryId, to, credit);
         jdbc.sql("UPDATE accounts SET balance_minor = balance_minor + ? WHERE id = ?").param(-debit).param(from).update();
         jdbc.sql("UPDATE accounts SET balance_minor = balance_minor + ? WHERE id = ?").param(credit).param(to).update();
+        return transferId;
     }
 
-    long balanceOf(UUID account) {
+    public long balanceOf(UUID account) {
         return jdbc.sql("SELECT balance_minor FROM accounts WHERE id = ?").param(account).query(Long.class).single();
     }
 
-    long totalBalanceOf(List<UUID> ids) {
+    public long totalBalanceOf(List<UUID> ids) {
         return jdbc.sql("SELECT COALESCE(SUM(balance_minor), 0)::bigint FROM accounts WHERE id IN (:ids)")
                 .param("ids", ids).query(Long.class).single();
     }
 
-    long transfersWithKey(String key) {
+    public long transfersWithKey(String key) {
         return jdbc.sql("SELECT count(*) FROM transfers WHERE idempotency_key = ?").param(key)
                 .query(Long.class).single();
     }
 
-    long journalEntriesForKey(String key) {
+    public long journalEntriesForKey(String key) {
         return jdbc.sql("""
                         SELECT count(*) FROM journal_entries je JOIN transfers t ON t.id = je.transfer_id
                         WHERE t.idempotency_key = ?
@@ -90,7 +91,7 @@ final class LedgerFixture {
                 .param(key).query(Long.class).single();
     }
 
-    long postingsForKey(String key) {
+    public long postingsForKey(String key) {
         return jdbc.sql("""
                         SELECT count(*) FROM postings p
                         JOIN journal_entries je ON je.id = p.journal_entry_id
@@ -101,7 +102,7 @@ final class LedgerFixture {
     }
 
     /** Journal entries whose transfer ran between two of the given accounts. */
-    long journalEntriesAmong(List<UUID> ids) {
+    public long journalEntriesAmong(List<UUID> ids) {
         return jdbc.sql("""
                         SELECT count(*) FROM journal_entries je JOIN transfers t ON t.id = je.transfer_id
                         WHERE t.from_account_id IN (:ids) AND t.to_account_id IN (:ids)
@@ -110,7 +111,7 @@ final class LedgerFixture {
     }
 
     /** Asserts the ledger invariants over every account this fixture created. */
-    void assertInvariantsHold() {
+    public void assertInvariantsHold() {
         assertThat(jdbc.sql("""
                         SELECT journal_entry_id FROM postings
                         WHERE journal_entry_id IN (SELECT journal_entry_id FROM postings WHERE account_id IN (:ids))
