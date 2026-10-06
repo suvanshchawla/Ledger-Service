@@ -76,6 +76,29 @@ class TransferIdempotencyTest {
     }
 
     @Test
+    void twoRequestsWithDifferentKeysAreTwoSeparateTransfers() {
+        LedgerFixture ledger = new LedgerFixture(jdbc);
+        UUID from = ledger.openCustomer("From", 10_000);
+        UUID to = ledger.openCustomer("To", 0);
+        String firstKey = "key-" + UUID.randomUUID();
+        String secondKey = "key-" + UUID.randomUUID();
+
+        // Identical requests (same hash), but two distinct payments: the key, not the body, identifies one.
+        Transfer first = transfers.transfer(firstKey, from, to, Money.ofMinorUnits(1_000));
+        Transfer second = transfers.transfer(secondKey, from, to, Money.ofMinorUnits(1_000));
+
+        assertThat(first.status()).isEqualTo(TransferStatus.COMMITTED);
+        assertThat(second.status()).isEqualTo(TransferStatus.COMMITTED);
+        assertThat(second.id()).isNotEqualTo(first.id());
+        assertThat(ledger.journalEntriesForKey(firstKey)).isEqualTo(1);
+        assertThat(ledger.journalEntriesForKey(secondKey)).isEqualTo(1);
+        assertThat(ledger.journalEntriesAmong(List.of(from, to))).isEqualTo(2);
+        assertThat(ledger.balanceOf(from)).as("debited twice").isEqualTo(8_000);
+        assertThat(ledger.balanceOf(to)).isEqualTo(2_000);
+        ledger.assertInvariantsHold();
+    }
+
+    @Test
     void sameKeyWithADifferentAmountIsRejectedWithConflict() {
         LedgerFixture ledger = new LedgerFixture(jdbc);
         UUID from = ledger.openCustomer("From", 10_000);
