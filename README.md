@@ -149,3 +149,7 @@ Load-test numbers will be added here once the transfer endpoint exists. There ar
   - [0003: Pessimistic row locks instead of optimistic versioning](docs/adr/0003-pessimistic-locking.md) (load-test comparison pending)
   - [0004: Idempotency via a stored request hash and a unique key](docs/adr/0004-idempotency-key-and-request-hash.md)
   - [0005: Transactional outbox with polling](docs/adr/0005-transactional-outbox.md)
+
+## License
+
+MIT. See [LICENSE](LICENSE).
