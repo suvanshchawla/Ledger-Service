@@ -6,7 +6,7 @@ A double-entry ledger for a small fintech platform. It is the system of record f
 
 This is a portfolio project. Correctness, tests that prove the guarantees, and readability matter more than feature count.
 
-> **Status: early development (Phase 1).** The project skeleton, the `Money` type, the database schema, error handling, the account and transfer endpoints, and the transfer logic (locking, idempotency, validation, outbox event) exist. Transaction history and publishing events to Kafka are planned and not built yet. See [Status](#status).
+> **Status: early development (Phase 1).** The project skeleton, the `Money` type, the database schema, error handling, the account and transfer endpoints, and the transfer logic (locking, idempotency, validation, outbox event) exist. The per-account postings history exists too. Publishing events to Kafka is planned and not built yet. See [Status](#status).
 
 ## What it will do
 
@@ -69,7 +69,7 @@ If you change a migration that has already been applied to your local database, 
 
 ## Try it
 
-With the app running (`./gradlew bootRun`), open two accounts, fund one from the seeded Treasury account, and move money. Each response carries the new account or transfer `id`; paste it into the next command.
+With the app running (`./gradlew bootRun`), open two accounts, fund one from the seeded Treasury account, and move money. Each response carries the new account or transfer `id`. The `<alex-id>`-style parts of the commands below are placeholders, not literal text: replace each one with the real id from the earlier response.
 
 ```bash
 # Open accounts (a customer account starts at a zero balance)
@@ -88,6 +88,10 @@ curl -si -X POST localhost:8080/api/v1/transfers \
 
 curl -s localhost:8080/api/v1/transfers/<transfer-id>
 curl -s localhost:8080/api/v1/accounts/<alex-id>
+
+# Alex's history, newest first, two at a time; pass a response's nextCursor back as cursor for the next page
+curl -s 'localhost:8080/api/v1/accounts/<alex-id>/postings?limit=2'
+curl -s 'localhost:8080/api/v1/accounts/<alex-id>/postings?limit=2&cursor=<nextCursor>'
 ```
 
 Amounts are whole minor units (cents). Use a new `Idempotency-Key` for each new payment, and reuse a key only to retry the same payment. Try breaking it: send more than the balance (a `422` problem naming the stored, rejected transfer), reuse a key with a different amount (`409`), omit the header (`428`), or send `"value": 12.5` (`400`).
@@ -111,7 +115,7 @@ docker-compose.yml                                local PostgreSQL
 | `Money` value type (minor units, overflow-safe) | Done |
 | Schema (V1-V3): accounts, transfers, journal, postings, outbox, account names, seeded treasury account | Done, with constraint tests |
 | Accounts endpoints: open an account (`POST /api/v1/accounts`), fetch one (`GET /api/v1/accounts/{id}`) | Done |
-| Account postings history (cursor-paginated) | Planned |
+| Account postings history (`GET /api/v1/accounts/{id}/postings`, cursor-paginated) | Done |
 | Transfer service: row locking, idempotency, validation, with concurrency and idempotency tests | Done (service layer) |
 | Transfer endpoints (`POST /api/v1/transfers`, `GET /api/v1/transfers/{id}`) | Done |
 | Outbox event written in the transfer transaction (`TransferCommitted`) | Done |
