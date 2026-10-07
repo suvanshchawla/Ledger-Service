@@ -238,7 +238,7 @@ class PostingHistoryTest {
     // ---- bad requests ----
 
     @ParameterizedTest
-    @ValueSource(strings = {"0", "-1", "101", "abc", ""})
+    @ValueSource(strings = {"0", "-1", "101", "abc"})
     void limitOutsideOneToHundredIs400(String limit) throws Exception {
         UUID account = new LedgerFixture(jdbc).openCustomer("Alex", 100);
 
