@@ -122,8 +122,8 @@ docker-compose.yml                                local PostgreSQL
 | Problem Details error handling (RFC 9457) | Done |
 | Outbox poller and Kafka publishing | Planned (Phase 2) |
 | CI: `./gradlew test` on every push (GitHub Actions) | Done |
-| ADR 0005 (outbox) | Done |
-| ADRs 0001-0004, k6 load-test results | Planned |
+| ADRs 0001-0005 | Done (0003 awaits the load-test comparison) |
+| k6 load-test results | Planned |
 
 Load-test numbers will be added here once the transfer endpoint exists. There are none yet.
 
@@ -144,4 +144,8 @@ Load-test numbers will be added here once the transfer endpoint exists. There ar
 
 - [Design doc and phase plan](docs/design.md)
 - Architecture decision records, written as decisions are made:
+  - [0001: Double-entry postings instead of a single balance column](docs/adr/0001-double-entry-postings.md)
+  - [0002: Integer minor units instead of BigDecimal](docs/adr/0002-integer-minor-units.md)
+  - [0003: Pessimistic row locks instead of optimistic versioning](docs/adr/0003-pessimistic-locking.md) (load-test comparison pending)
+  - [0004: Idempotency via a stored request hash and a unique key](docs/adr/0004-idempotency-key-and-request-hash.md)
   - [0005: Transactional outbox with polling](docs/adr/0005-transactional-outbox.md)
