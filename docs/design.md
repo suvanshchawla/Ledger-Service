@@ -6,7 +6,7 @@ Sep 30, 2026 · @Suvansh Chawla
 
 The ledger service is the system of record for money in the platform: it holds accounts, moves money between them with double-entry bookkeeping, and publishes an event for every committed transfer. The fraud service (Python) and the risk-review service (C#/.NET) consume those events later.
 
-It is also the portfolio piece that proves the Java, SQL, REST and testing lines on the CV, so the goals mix correctness and presentability.
+It is also a portfolio project, so the goals combine correctness with presentability.
 
 Success criteria:
 
@@ -182,7 +182,7 @@ The transfer flow:
 7. Insert a `TransferCommitted` row into `outbox_events`.
 8. Mark the transfer COMMITTED and commit. Everything in steps 3–8 lands together or not at all.
 
-Why pessimistic locking first: on a hot account (a popular merchant), optimistic locking with a `version` column causes many retries under contention, while row locks simply queue. Build the pessimistic version first, then try the optimistic version as an experiment and compare them in the load test; that comparison is a strong ADR and interview story.
+Why pessimistic locking first: on a hot account (a popular merchant), optimistic locking with a `version` column causes many retries under contention, while row locks simply queue. The pessimistic version is implemented first. An optimistic version is planned as an experiment, to be compared with it in the load test and recorded in ADR 0003.
 
 What "exactly once" means here: the client may retry any number of times, and the idempotency key plus the unique constraints guarantee one booking. Delivery of events downstream is at-least-once (see next section), so consumers must deduplicate by event id.
 
@@ -212,7 +212,7 @@ Publisher design:
 - After Kafka acknowledges, it sets `published_at`. A crash between send and update means a re-send, which is why delivery is at-least-once.
 - Published rows are deleted by a cleanup job after 7 days.
 
-Phase 1 has no Kafka: the outbox table fills up and a test asserts the rows are correct. Phase 2 adds the poller. A later upgrade is Debezium change-data-capture instead of polling, worth mentioning as a trade-off in the ADR.
+Phase 1 has no Kafka: the outbox table fills up and a test asserts the rows are correct. Phase 2 adds the poller. A later upgrade is Debezium change-data-capture instead of polling; the trade-off is recorded in ADR 0005.
 
 ## Tech stack and project structure
 
@@ -230,7 +230,7 @@ Java 21 with Spring Boot 3, the stack most Toronto banks and fintechs run, kept 
 | API docs | springdoc-openapi | Generated Swagger UI from the code |
 | Observability | Micrometer, OpenTelemetry | Metrics and traces across services later |
 
-Prefer `JdbcClient` with explicit SQL for the transfer path. JPA hides the locking and flush order, and in this service you want every query visible.
+The transfer path uses `JdbcClient` with explicit SQL. JPA hides the locking and flush order, and this service needs every query to be visible.
 
 Package layout, organized by feature rather than by layer:
 
@@ -264,11 +264,11 @@ The tests are the proof of the guarantees, so the concurrency and idempotency te
 | Contract (Phase 2) | Testcontainers (Redpanda) | Outbox rows are published once and match the event schema |
 | Load | k6 | Throughput and p50/p95/p99 latency, recorded in the README |
 
-Write the concurrency test before the locking code. Watch it fail against a naive implementation, then make it pass; that before-and-after is worth describing in the README.
+The concurrency tests are written before the locking code. They fail against a naive implementation without locking and pass once the locking is in place.
 
 ## Observability
 
-Start with structured logs and a handful of metrics in Phase 1; distributed tracing waits until there is a second service to trace into.
+Phase 1 provides structured logs and a handful of metrics; distributed tracing waits until there is a second service to trace into.
 
 - **Logs:** JSON logs with `transferId`, `idempotencyKey` and a request id on every line, so one transfer can be followed end to end.
 - **Metrics (Micrometer, exposed via Actuator):** transfer count by status, transfer latency histogram, idempotency replays, lock wait time, and outbox lag (age of the oldest unpublished event).
@@ -288,7 +288,7 @@ Four phases, each closed by a gate that is a passing test or a visible result, n
 | 3 | Distributed tracing with OpenTelemetry across the ledger, fraud and risk-review services | To be defined |
 | 4 | Authentication (a static API key or none until then) | To be defined |
 
-Only Phase 1 is this service alone; Phases 2–4 grow it into the full platform. Don't start a phase until the previous gate passes.
+Only Phase 1 is this service alone; Phases 2–4 grow it into the full platform. A phase starts only after the previous gate passes.
 
 Phase 1 tasks, in order:
 
@@ -302,47 +302,9 @@ Phase 1 tasks, in order:
 - [ ] GitHub Actions workflow running `./gradlew test` on every push
 - [ ] ADRs 0001–0004
 
-## AI-assisted workflow
-
-You write the parts an interviewer will question; Claude Code writes the parts nobody asks about, and reviews everything.
-
-| Work | Who writes it | Claude Code's role |
-| --- | --- | --- |
-| `TransferService` (locking, idempotency, posting logic) | You, by hand | Reviewer: ask it to find race conditions and missed edge cases |
-| Schema and migrations | You | Reviewer: constraints, indexes, locking implications |
-| Concurrency and idempotency tests | You specify the scenarios | Writes the Testcontainers scaffolding |
-| Controllers, DTOs, validation, Problem Details handler | Claude Code | You review every diff |
-| Gradle setup, docker-compose, CI workflow | Claude Code | You review and understand each line |
-| k6 scripts, README, ADR drafts | Claude Code drafts | You edit into your own words |
-
-Rules that keep it a learning project:
-
-- Work in small slices: one endpoint or one test class per Claude Code session, each ending in a commit you can explain.
-- Before accepting a diff, be able to say why each change is there. If you can't, ask Claude Code to explain it, then decide.
-- Use it as a Java tutor: ask how Spring manages the transaction boundary, what `FOR UPDATE` does to other sessions, what the JIT does with records.
-
-Starting `CLAUDE.md`:
-
-```markdown
-# Ledger service
-Java 21, Spring Boot 3, Gradle Kotlin DSL, PostgreSQL 16, Flyway.
-
-## Rules
-- Money is always `long` minor units wrapped in `Money`; never double or BigDecimal in the domain.
-- Transfer path uses JdbcClient with explicit SQL, not JPA.
-- Lock accounts in ascending id order.
-- Postings and journal entries are immutable: no UPDATE or DELETE.
-- Every change comes with tests; integration tests use Testcontainers.
-- Do not modify TransferService without being asked; suggest changes instead.
-
-## Commands
-- ./gradlew test
-- docker compose up -d
-```
-
 ## ADRs and open questions
 
-Write each ADR when you make the decision, one page each: context, options considered, decision, consequences.
+Each ADR is written when the decision is made, on one page: context, options considered, decision and consequences.
 
 - [ ] 0001: Double-entry postings instead of a single balance column
 - [ ] 0002: Integer minor units instead of BigDecimal
