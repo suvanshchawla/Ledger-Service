@@ -281,7 +281,12 @@ Outbox lag is the metric to alert on: if it grows, downstream services are silen
 
 Four phases, each closed by a gate that is a passing test or a visible result, not a feeling of being done.
 
-&#91;embedded content: phase plan · 4 phases, 4 gates\]
+| Phase | Scope | Gate |
+| --- | --- | --- |
+| 1 | The ledger service alone: accounts, transfers, idempotency, the outbox table, CI (the task list below) | The concurrency and idempotency tests pass, and a k6 result is recorded in the README |
+| 2 | The outbox poller publishes `TransferCommitted` to Kafka (Redpanda locally) | Contract test: outbox rows are published once and match the event schema |
+| 3 | Distributed tracing with OpenTelemetry across the ledger, fraud and risk-review services | To be defined |
+| 4 | Authentication (a static API key or none until then) | To be defined |
 
 Only Phase 1 is this service alone; Phases 2–4 grow it into the full platform. Don't start a phase until the previous gate passes.
 
