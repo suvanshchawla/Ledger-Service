@@ -24,6 +24,7 @@ import org.springframework.test.web.servlet.ResultActions;
 
 import com.jayway.jsonpath.JsonPath;
 
+import dev.suvansh.ledger.LedgerFixture;
 import dev.suvansh.ledger.PostgresTestConfig;
 
 /** POST /api/v1/transfers and GET /api/v1/transfers/{id}: the HTTP contract from the design doc. */

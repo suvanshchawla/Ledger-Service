@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import dev.suvansh.ledger.LedgerFixture;
 import dev.suvansh.ledger.PostgresTestConfig;
 import dev.suvansh.ledger.common.Money;
 import dev.suvansh.ledger.common.ProblemException;

@@ -3,6 +3,7 @@ package dev.suvansh.ledger.transfer;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import dev.suvansh.ledger.LedgerFixture;
 import dev.suvansh.ledger.PostgresTestConfig;
 import java.util.ArrayList;
 import java.util.List;

@@ -2,6 +2,7 @@ package dev.suvansh.ledger.transfer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import dev.suvansh.ledger.LedgerFixture;
 import dev.suvansh.ledger.PostgresTestConfig;
 import dev.suvansh.ledger.common.Money;
 import dev.suvansh.ledger.transfer.ParallelRunner.Outcome;

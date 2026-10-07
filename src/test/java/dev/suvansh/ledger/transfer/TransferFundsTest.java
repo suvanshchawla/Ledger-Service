@@ -10,6 +10,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
+import dev.suvansh.ledger.LedgerFixture;
 import dev.suvansh.ledger.PostgresTestConfig;
 import dev.suvansh.ledger.common.Money;
 
