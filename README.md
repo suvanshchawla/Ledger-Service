@@ -100,7 +100,7 @@ Amounts are whole minor units (cents). Use a new `Idempotency-Key` for each new 
 
 ```
 src/main/java/dev/suvansh/ledger/
-  account/ transfer/ journal/ outbox/ common/    packages by feature
+  account/ transfer/ common/                     packages by feature
 src/main/resources/db/migration/                  Flyway migrations (V<n>__description.sql)
 src/test/java/                                    unit and integration tests
 docs/                                             design doc and ADRs

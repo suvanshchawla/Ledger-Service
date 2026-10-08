@@ -66,10 +66,9 @@ POST /api/v1/transfers
 Idempotency-Key: 7f3c9a2e-1b4d-4c8e-9f21-5a6b7c8d9e0f
 
 {
-  "fromAccountId": "acc_123",
-  "toAccountId": "acc_456",
-  "amount": { "value": 2500, "currency": "CAD" },
-  "reference": "Rent share"
+  "fromAccountId": "5d49f5f4-c240-445d-9cd3-a4bdd7dab36a",
+  "toAccountId": "2950fa7c-8706-4da7-9d8c-059d5630c97c",
+  "amount": { "value": 2500, "currency": "CAD" }
 }
 ```
 
@@ -77,13 +76,21 @@ Errors use RFC 9457 Problem Details (`application/problem+json`) so every error 
 
 | Status | When |
 | --- | --- |
-| 400 | Validation failed: missing fields, non-positive amount, same source and target |
-| 404 | An account does not exist |
+| 400 | Validation failed: missing fields, non-positive or fractional amount, same source and target, malformed JSON or id, a blank or over-long `Idempotency-Key` |
+| 404 | An account or transfer does not exist |
 | 409 | Idempotency key reused with a different request body |
-| 422 | Business rule failed, e.g. insufficient funds; the transfer is stored as REJECTED |
+| 422 | Business rule failed: insufficient funds (the transfer is stored as REJECTED) or accounts of different currencies |
 | 428 | Idempotency-Key header missing |
 
 A repeat request with the same key and body returns the original response, same status and same transfer id, without executing again.
+
+Notes on the contract:
+
+- Amounts are whole minor units (cents). `Idempotency-Key` is required on `POST /api/v1/transfers` and must be 1 to 255 characters.
+- A rejected transfer is answered with 422 and Problem Details that include a `transferId` member naming the stored transfer; `GET /api/v1/transfers/{id}` returns it with status `REJECTED` and its reason.
+- Accounts opened through the API are always CUSTOMER accounts with a zero balance. The Treasury SYSTEM account is seeded by a migration, so money enters the system only through transfers from it.
+- The history takes `limit` (1 to 100, default 20) and an opaque `cursor`, the previous page's `nextCursor`. Items carry the transfer id, the signed amount and the counterparty account.
+- A free-text transfer reference is not supported: the schema has no column for it.
 
 ## Data model
 
@@ -164,6 +171,7 @@ Design notes:
 - Zero-sum per journal entry is enforced in the service code (and proven by tests), not by the database.
 - `transfers.status` has no PENDING state: the transfer row and its journal entry are written in one transaction, so a transfer is only ever visible as COMMITTED or REJECTED.
 - Currency is stored per account; a transfer between accounts with different currencies is rejected by the service (422).
+- The schema above is V1. Migration V2 adds `accounts.name` (required, 1 to 100 characters, no leading or trailing whitespace, not unique). V3 seeds the Treasury SYSTEM account (`00000000-0000-0000-0000-000000000001`), the source of deposits.
 
 ## Consistency, concurrency and idempotency
 
@@ -171,18 +179,20 @@ Each transfer runs in one database transaction that locks both accounts in a fix
 
 The transfer flow:
 
-1. Hash the request body and look up the idempotency key.
-   - Key exists with the same hash: return the stored result, do nothing else.
+1. Validate what needs no database: the source and destination differ, and the amount is positive (400 otherwise).
+2. Hash the request (SHA-256 of source, destination and amount) and look up the idempotency key.
+   - Key exists with the same hash: return the stored result and stop.
    - Key exists with a different hash: return 409.
-2. Begin a transaction at READ COMMITTED.
-3. Insert the transfer row as PENDING. If the unique key constraint fires, another request with the same key won the race: roll back and return its stored result.
-4. Lock both accounts with `SELECT ... FOR UPDATE`, always in ascending id order. Fixed ordering prevents A→B and B→A transfers from deadlocking each other.
-5. Check funds. If insufficient, mark the transfer REJECTED, commit, return 422.
-6. Insert the journal entry and two postings (−amount, +amount), update both cached balances.
-7. Insert a `TransferCommitted` row into `outbox_events`.
-8. Mark the transfer COMMITTED and commit. Everything in steps 3–8 lands together or not at all.
+3. Begin a transaction at READ COMMITTED.
+4. Lock both accounts with one statement, `SELECT ... WHERE id IN (...) ORDER BY id FOR UPDATE`, always in ascending id order. Fixed ordering prevents A→B and B→A transfers from deadlocking each other. A missing account is a 404; accounts of different currencies are a 422.
+5. Check funds. Only CUSTOMER sources are checked; SYSTEM accounts may go negative.
+6. Insert the transfer row with its final status: COMMITTED, or REJECTED with a reason. It is inserted first, so a duplicate idempotency key fails here before anything else is written.
+7. If COMMITTED, insert the journal entry and two postings (−amount, +amount), update both cached balances, and insert a `TransferCommitted` row into `outbox_events`.
+8. Commit. Steps 4–7 land together or not at all.
 
-Why pessimistic locking first: on a hot account (a popular merchant), optimistic locking with a `version` column causes many retries under contention, while row locks simply queue. The pessimistic version is implemented first. An optimistic version is planned as an experiment, to be compared with it in the load test and recorded in ADR 0003.
+If the insert in step 6 hits the `UNIQUE` constraint on the key, another request with the same key won the race. The transaction rolls back, the lookup from step 2 is repeated, and the winner's result is returned (or a 409 if its request differed). Only COMMITTED and REJECTED transfers are stored; requests that fail in steps 1 or 4 leave no trace.
+
+Why pessimistic locking first: on a hot account (a popular merchant), optimistic locking (which needs a `version` column, absent from the current schema) causes many retries under contention, while row locks simply queue. The pessimistic version is implemented first. An optimistic version is planned as an experiment, to be compared with it in the load test and recorded in ADR 0003.
 
 What "exactly once" means here: the client may retry any number of times, and the idempotency key plus the unique constraints guarantee one booking. Delivery of events downstream is at-least-once (see next section), so consumers must deduplicate by event id.
 
@@ -194,13 +204,13 @@ Event shape (JSON, versioned):
 
 ```json
 {
-  "eventId": "b1e2...",
+  "eventId": "b1e2c7a4-3f90-4d1e-8a52-6c0d9e7f1a23",
   "eventType": "TransferCommitted",
   "schemaVersion": 1,
   "occurredAt": "2026-10-05T14:03:22Z",
-  "transferId": "trf_789",
-  "fromAccountId": "acc_123",
-  "toAccountId": "acc_456",
+  "transferId": "8f14e45f-ceea-467a-9575-1e3b8d2c4a90",
+  "fromAccountId": "5d49f5f4-c240-445d-9cd3-a4bdd7dab36a",
+  "toAccountId": "2950fa7c-8706-4da7-9d8c-059d5630c97c",
   "amount": { "value": 2500, "currency": "CAD" }
 }
 ```
@@ -220,35 +230,38 @@ Java 21 with Spring Boot 3, the stack most Toronto banks and fintechs run, kept 
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| Language | Java 21 | Records, sealed types and virtual threads are good talking points |
+| Language | Java 21 | Records for immutable value types; a long-term support release |
 | Framework | Spring Boot 3 (Web, Data JPA or JdbcClient, Validation, Actuator) | Industry default for Java backends |
 | Database | PostgreSQL 16 | Row locks, SKIP LOCKED, JSONB, partial indexes |
 | Migrations | Flyway | Versioned, reviewable schema changes |
 | Messaging | Kafka (Redpanda locally) | Phase 2; Redpanda is lighter to run in Docker |
-| Build | Gradle (Kotlin DSL) | Common in modern Java shops&#32; |
+| Build | Gradle (Kotlin DSL) | Common in modern Java projects |
 | Testing | JUnit 5, AssertJ, Testcontainers, k6 | Real Postgres and Kafka in tests, load numbers for the README |
 | API docs | springdoc-openapi | Generated Swagger UI from the code |
 | Observability | Micrometer, OpenTelemetry | Metrics and traces across services later |
 
 The transfer path uses `JdbcClient` with explicit SQL. JPA hides the locking and flush order, and this service needs every query to be visible.
 
+Not yet in the project: Kafka (Phase 2), springdoc-openapi, metrics beyond the Actuator defaults, OpenTelemetry and the k6 scripts.
+
 Package layout, organized by feature rather than by layer:
 
 ```
 ledger-service/
   src/main/java/dev/suvansh/ledger/
-    account/     AccountController, AccountService, AccountRepository
+    account/     account endpoints and postings history: controller, service, repositories, DTOs
     transfer/    TransferController, TransferService, TransferRepository
-    journal/     JournalEntry, Posting, JournalRepository
-    outbox/      OutboxEvent, OutboxRepository, OutboxPublisher
-    common/      Money, ProblemDetails handler, IdempotencyFilter
-  src/main/resources/db/migration/   V1__init.sql, ...
-  src/test/java/...                  unit, integration, concurrency tests
-  load-test/                         k6 scripts
-  docs/adr/                          0001-double-entry.md, ...
+    common/      Money, MoneyDto, ProblemException, Problems, ProblemDetailsHandler
+  src/main/resources/db/migration/   V1__init.sql, V2__add_account_name.sql, V3__seed_treasury_account.sql
+  src/test/java/...                  unit, integration, concurrency and idempotency tests
+  .github/workflows/ci.yml           ./gradlew test on every push
+  docs/adr/                          architecture decision records
   docker-compose.yml                 Postgres (+ Redpanda in Phase 2)
+  load-test/                         k6 scripts (planned)
   CLAUDE.md
 ```
+
+`TransferService` writes the journal entry, postings and outbox row itself. A package for the outbox publisher arrives with the Phase 2 poller.
 
 ## Testing strategy
 
@@ -268,7 +281,7 @@ The concurrency tests are written before the locking code. They fail against a n
 
 ## Observability
 
-Phase 1 provides structured logs and a handful of metrics; distributed tracing waits until there is a second service to trace into.
+Phase 1 targets structured logs and a handful of metrics; distributed tracing waits until there is a second service to trace into. Implemented so far: the Actuator health endpoint. The logs, metrics and alert below are planned.
 
 - **Logs:** JSON logs with `transferId`, `idempotencyKey` and a request id on every line, so one transfer can be followed end to end.
 - **Metrics (Micrometer, exposed via Actuator):** transfer count by status, transfer latency histogram, idempotency replays, lock wait time, and outbox lag (age of the oldest unpublished event).
@@ -292,25 +305,28 @@ Only Phase 1 is this service alone; Phases 2–4 grow it into the full platform.
 
 Phase 1 tasks, in order:
 
-- [ ] Create the repo, Gradle project and docker-compose with Postgres
-- [ ] Write the V1 Flyway migration from the schema above
-- [ ] Build the `Money` value object with unit tests
-- [ ] Accounts endpoints with Testcontainers integration tests
-- [ ] Write the concurrency test and watch it fail on a naive transfer
-- [ ] Write `TransferService` by hand with locking and idempotency until it passes
-- [ ] Problem Details error handling and the idempotency replay path
-- [ ] GitHub Actions workflow running `./gradlew test` on every push
-- [ ] ADRs 0001–0004
+- [x] Create the repo, Gradle project and docker-compose with Postgres
+- [x] Write the V1 Flyway migration from the schema above
+- [x] Build the `Money` value object with unit tests
+- [x] Accounts endpoints with Testcontainers integration tests
+- [x] Write the concurrency test and watch it fail on a naive transfer
+- [x] Write `TransferService` by hand with locking and idempotency until it passes
+- [x] Problem Details error handling and the idempotency replay path
+- [x] GitHub Actions workflow running `./gradlew test` on every push
+- [x] ADRs 0001–0004 (0003 is pending the load-test comparison)
+- [x] Outbox event written in the transfer transaction
+- [x] Transfer endpoints and the postings history endpoint
+- [ ] k6 load test, with the results recorded in the README
 
 ## ADRs and open questions
 
 Each ADR is written when the decision is made, on one page: context, options considered, decision and consequences.
 
-- [ ] 0001: Double-entry postings instead of a single balance column
-- [ ] 0002: Integer minor units instead of BigDecimal
-- [ ] 0003: Pessimistic row locks vs optimistic versioning, with load-test numbers
-- [ ] 0004: Idempotency via stored request hash and unique key
-- [ ] 0005: Transactional outbox with polling instead of dual writes or CDC
+- [x] 0001: Double-entry postings instead of a single balance column
+- [x] 0002: Integer minor units instead of BigDecimal
+- [ ] 0003: Pessimistic row locks vs optimistic versioning, with load-test numbers (written; the numbers are pending)
+- [x] 0004: Idempotency via stored request hash and unique key
+- [x] 0005: Transactional outbox with polling instead of dual writes or CDC
 - [ ] 0006: JdbcClient instead of JPA on the transfer path
 
 Open questions:
