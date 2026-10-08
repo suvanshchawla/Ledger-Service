@@ -165,6 +165,7 @@ and limits are in [docs/load-test-results.md](docs/load-test-results.md).
   - [0003: Pessimistic row locks instead of optimistic versioning](docs/adr/0003-pessimistic-locking.md) (load-test numbers recorded; optimistic comparison pending)
   - [0004: Idempotency via a stored request hash and a unique key](docs/adr/0004-idempotency-key-and-request-hash.md)
   - [0005: Transactional outbox with polling](docs/adr/0005-transactional-outbox.md)
+  - [0006: JdbcClient with explicit SQL instead of JPA](docs/adr/0006-jdbcclient-instead-of-jpa.md)
 
 ## License
 

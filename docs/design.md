@@ -327,7 +327,7 @@ Each ADR is written when the decision is made, on one page: context, options con
 - [ ] 0003: Pessimistic row locks vs optimistic versioning, with load-test numbers (written; pessimistic numbers recorded, optimistic comparison pending)
 - [x] 0004: Idempotency via stored request hash and unique key
 - [x] 0005: Transactional outbox with polling instead of dual writes or CDC
-- [ ] 0006: JdbcClient instead of JPA on the transfer path
+- [x] 0006: JdbcClient with explicit SQL instead of JPA on the transfer path
 
 Open questions:
 
