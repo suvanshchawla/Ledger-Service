@@ -8,3 +8,6 @@ bin/
 .classpath
 .project
 .settings/
+
+# k6 raw run output (curated results go in docs/)
+load-test/results/
