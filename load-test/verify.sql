@@ -11,8 +11,9 @@ SELECT 'customer accounts with a negative balance', count(*) FROM accounts WHERE
 UNION ALL
 SELECT 'money not conserved (sum of all balances, must be 0)', ABS(COALESCE(SUM(balance_minor), 0)) FROM accounts
 UNION ALL
-SELECT 'COMMITTED transfers without exactly one journal entry', count(*) FROM transfers t
-    WHERE t.status = 'COMMITTED' AND (SELECT count(*) FROM journal_entries je WHERE je.transfer_id = t.id) <> 1
+SELECT 'COMMITTED transfers without exactly one journal entry', count(*) FROM (
+    SELECT t.id FROM transfers t LEFT JOIN journal_entries je ON je.transfer_id = t.id
+    WHERE t.status = 'COMMITTED' GROUP BY t.id HAVING count(je.id) <> 1) x
 UNION ALL
 SELECT 'REJECTED transfers that have a journal entry', count(*) FROM transfers t
     JOIN journal_entries je ON je.transfer_id = t.id WHERE t.status = 'REJECTED'
@@ -21,8 +22,9 @@ SELECT 'journal entries without exactly two postings', count(*) FROM (
     SELECT je.id FROM journal_entries je LEFT JOIN postings p ON p.journal_entry_id = je.id
     GROUP BY je.id HAVING count(p.id) <> 2) t
 UNION ALL
-SELECT 'COMMITTED transfers without exactly one outbox event', count(*) FROM transfers t
-    WHERE t.status = 'COMMITTED' AND (SELECT count(*) FROM outbox_events o WHERE o.aggregate_id = t.id) <> 1
+SELECT 'COMMITTED transfers without exactly one outbox event', count(*) FROM (
+    SELECT t.id FROM transfers t LEFT JOIN outbox_events o ON o.aggregate_id = t.id
+    WHERE t.status = 'COMMITTED' GROUP BY t.id HAVING count(o.id) <> 1) x
 UNION ALL
 SELECT 'outbox events for transfers that are not COMMITTED', count(*) FROM outbox_events o
     WHERE NOT EXISTS (SELECT 1 FROM transfers t WHERE t.id = o.aggregate_id AND t.status = 'COMMITTED')

@@ -122,10 +122,26 @@ docker-compose.yml                                local PostgreSQL
 | Problem Details error handling (RFC 9457) | Done |
 | Outbox poller and Kafka publishing | Planned (Phase 2) |
 | CI: `./gradlew test` on every push (GitHub Actions) | Done |
-| ADRs 0001-0005 | Done (0003 awaits the load-test comparison) |
-| k6 load-test results | Planned |
+| ADRs 0001-0005 | Done (0003 still awaits the comparison with optimistic locking) |
+| k6 load tests and results | Done for pessimistic locking; the optimistic comparison is planned |
 
-Load-test numbers will be added here once the transfer endpoint exists. There are none yet.
+## Load-test results
+
+Measured on one laptop (Ryzen 5 5600H, 12 threads) where k6, the application and PostgreSQL all share the CPU,
+with default PostgreSQL and connection-pool settings. Each scenario was run once. The ledger invariants were
+checked after every run and all held, with no PostgreSQL deadlocks.
+
+| Scenario | Load | p50 | p99 | Failed |
+| --- | --- | --- | --- | --- |
+| Random account pairs | ramp to 400 transfers/s | 3.8 ms | 5.7 ms | 0 |
+| 10% duplicate requests with the same key | ramp to 400/s | 3.8 ms | 6.4 ms | 0 |
+| Every payment to one account | ramp to 400/s | 4.2 ms | 1.4 s | 0 |
+| Every deposit from the Treasury | ramp to 400/s | 4.4 ms | 1.7 s | 0 |
+| Random account pairs | ramp to 2,000/s | 4.4 ms | 0.6-0.7 s | 0 (about 980/s sustained) |
+
+Without contention the service stayed under 7 ms at p99 up to 400/s. Contention on a single row, including the
+Treasury, is what raises the tail latency; at 2,000/s the 10-connection pool saturated. The details, method
+and limits are in [docs/load-test-results.md](docs/load-test-results.md).
 
 ## Limitations
 
@@ -146,7 +162,7 @@ Load-test numbers will be added here once the transfer endpoint exists. There ar
 - Architecture decision records, written as decisions are made:
   - [0001: Double-entry postings instead of a single balance column](docs/adr/0001-double-entry-postings.md)
   - [0002: Integer minor units instead of BigDecimal](docs/adr/0002-integer-minor-units.md)
-  - [0003: Pessimistic row locks instead of optimistic versioning](docs/adr/0003-pessimistic-locking.md) (load-test comparison pending)
+  - [0003: Pessimistic row locks instead of optimistic versioning](docs/adr/0003-pessimistic-locking.md) (load-test numbers recorded; optimistic comparison pending)
   - [0004: Idempotency via a stored request hash and a unique key](docs/adr/0004-idempotency-key-and-request-hash.md)
   - [0005: Transactional outbox with polling](docs/adr/0005-transactional-outbox.md)
 
