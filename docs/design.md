@@ -242,7 +242,7 @@ Java 21 with Spring Boot 3, the stack most Toronto banks and fintechs run, kept 
 
 The transfer path uses `JdbcClient` with explicit SQL. JPA hides the locking and flush order, and this service needs every query to be visible.
 
-Not yet in the project: Kafka (Phase 2), springdoc-openapi, metrics beyond the Actuator defaults, OpenTelemetry and the k6 scripts.
+Not yet in the project: Kafka (Phase 2), springdoc-openapi, metrics beyond the Actuator defaults and OpenTelemetry.
 
 Package layout, organized by feature rather than by layer:
 
@@ -257,7 +257,7 @@ ledger-service/
   .github/workflows/ci.yml           ./gradlew test on every push
   docs/adr/                          architecture decision records
   docker-compose.yml                 Postgres (+ Redpanda in Phase 2)
-  load-test/                         k6 scripts (planned)
+  load-test/                         k6 scripts, runner and ledger verification
   CLAUDE.md
 ```
 
@@ -313,10 +313,10 @@ Phase 1 tasks, in order:
 - [x] Write `TransferService` by hand with locking and idempotency until it passes
 - [x] Problem Details error handling and the idempotency replay path
 - [x] GitHub Actions workflow running `./gradlew test` on every push
-- [x] ADRs 0001–0004 (0003 is pending the load-test comparison)
+- [x] ADRs 0001–0004 (0003 still awaits the optimistic comparison)
 - [x] Outbox event written in the transfer transaction
 - [x] Transfer endpoints and the postings history endpoint
-- [ ] k6 load test, with the results recorded in the README
+- [x] k6 load test, with the results recorded in the README ([results](load-test-results.md))
 
 ## ADRs and open questions
 
@@ -324,7 +324,7 @@ Each ADR is written when the decision is made, on one page: context, options con
 
 - [x] 0001: Double-entry postings instead of a single balance column
 - [x] 0002: Integer minor units instead of BigDecimal
-- [ ] 0003: Pessimistic row locks vs optimistic versioning, with load-test numbers (written; the numbers are pending)
+- [ ] 0003: Pessimistic row locks vs optimistic versioning, with load-test numbers (written; pessimistic numbers recorded, optimistic comparison pending)
 - [x] 0004: Idempotency via stored request hash and unique key
 - [x] 0005: Transactional outbox with polling instead of dual writes or CDC
 - [ ] 0006: JdbcClient instead of JPA on the transfer path
